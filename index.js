@@ -2237,7 +2237,12 @@ function buildAdaptCharacterArial(
   const languageDirective = getAdaptLanguageDirective(adaptLanguage);
   const sizeDirective = getAdaptSizeDirective(adaptSize);
   const ovipositionDirective = isOviposition
-    ? 'OVIPOSITION: oviposition means egg production and insertion/deposition of eggs into {{user}} as a physiological reproductive/roleplay mechanism. {{char}} must be physiologically capable of producing and placing eggs inside {{user}}. If the original character is human or otherwise incompatible, adapt {{char}} into a non-furry, mostly humanoid fantasy, alien, demonic, reptilian, insectoid, or otherwise suitable species/body variant that can plausibly oviposit. This capability must be reflected in {{char}}\'s Race, Body, Features, Privates, sexuality, and scenario logic.'
+    ? `OVIPOSITION AU REQUIREMENT:
+- Oviposition means egg production and insertion/deposition of eggs into {{user}} as a physiological reproductive/roleplay mechanism.
+- In this AU card, {{char}} must be a species/body variant that can produce eggs and place them inside {{user}}.
+- If original {{char}} is human, ordinary humanoid, or otherwise incompatible, change Race, Body, Features, Privates, Kinks/Preferences, Sexual Quirks and Habits, and scenario logic so {{char}} is compatible.
+- Do not keep {{char}} as a normal human if that would make oviposition impossible.
+- Keep the result non-furry and mostly humanoid unless the selected universe logically requires something else.`
     : '';
 
   if (adaptCustomArial && String(adaptCustomArial).trim()) {
@@ -2253,6 +2258,9 @@ function buildAdaptCharacterArial(
       .replaceAll('{{adapt_language}}', languageDirective);
     return `[SYSTEM OVERRIDE: IGNORE ALL PREVIOUS CONVERSATION HISTORY]
 SILLYTAVERN MACROS: use {{char}} and {{user}} only.
+TASK TYPE: create a NEW alternate-universe character card for {{char}}, not a preservation rewrite of the old card.
+KEEP ONLY: core personality, voice, behavioral logic, emotional patterns, habits, preferences, fears, and recognizable quirks.
+REBUILD FOR AU: world, scenario, biography, residence, role, connections, outfit, race/species/body/anatomy, goals, secrets, sexuality, and any lore that conflicts with the generated universe.
 LANGUAGE: ${languageDirective}
 DETAIL LEVEL: ${sizeDirective}
 ${ovipositionDirective ? ovipositionDirective + '\n' : ''}
@@ -2262,7 +2270,10 @@ ${customPrompt}`;
   return `[SYSTEM OVERRIDE: IGNORE ALL PREVIOUS CONVERSATION HISTORY]
 [CRITICAL INSTRUCTION: THIS IS A CHARACTER CARD ADAPTATION TASK. DO NOT WRITE A STORY. DO NOT REPLY TO THE USER.]
 
-You are adapting a SillyTavern character card for {{char}}. Use the original card and the generated universe story as source material, but output a clean adapted character card.
+You are creating a NEW alternate-universe SillyTavern character card for {{char}}.
+This is NOT a preservation rewrite of the old card. The old card is only a reference for {{char}}'s core personality, voice, emotional patterns, relationship style, habits, fears, preferences, and recognisable behavioral logic.
+
+The adapted card must describe AU {{char}} as if {{char}} naturally belongs to the generated universe story. Replace the old biography, residence, social role, species/body where needed, outfit, scenario, goals, secrets, connections, and world details with new AU-compatible material.
 
 SILLYTAVERN MACROS:
 - Use {{char}} for the character.
@@ -2290,7 +2301,23 @@ ${cleanStory}
 ===== END STORY =====
 
 ${ovipositionDirective ? ovipositionDirective + '\n' : ''}TASK:
-Rewrite the adapted card for {{char}}. The card must describe {{char}} only. Do not merge {{user}}'s biography, memories, body, thoughts, decisions, actions, or personal history into {{char}}.
+Generate a new AU character card for {{char}} from scratch.
+
+KEEP FROM ORIGINAL:
+- Core personality and archetype.
+- Speech style, attitude, emotional reactions, habits, likes/dislikes, fears, and recognizable quirks.
+- Important relationship dynamics only if they can be translated into the AU.
+
+REPLACE OR REBUILD:
+- World, time period, scenario, residence, occupation/social role, backstory, connections, goals, secrets, outfit, and any lore that conflicts with the generated universe.
+- Race/species/body/anatomy when the selected AU condition requires it.
+- Sexuality and intimate anatomy when the selected encounter mechanic requires it.
+
+STRICT AU RULES:
+- The final card must not read like the original character pasted into a new first message.
+- Do not preserve old canon facts merely because they existed in the source card.
+- Every filled field must fit the generated universe story and selected encounter/mood.
+- The card must describe {{char}} only. Do not merge {{user}}'s biography, memories, body, thoughts, decisions, actions, or personal history into {{char}}.
 
 LANGUAGE:
 ${languageDirective}
@@ -2470,6 +2497,34 @@ function parseAdaptResponse(rawText) {
   }
 }
 
+function validateAdaptedCard(parsed, isOviposition) {
+  if (!parsed || !isOviposition) return true;
+  const combined = [
+    parsed.description,
+    parsed.personality,
+    parsed.scenario,
+    parsed.mes_example,
+  ]
+    .filter(Boolean)
+    .join('\n')
+    .toLowerCase();
+
+  const hasOviposition =
+    /ovipos|egg|eggs|яйц|икр|кладк|отклад|яйцеклад/.test(combined);
+  const description = parsed.description || '';
+  const hasCompatiblePhysiology =
+    /alien|demon|demonic|reptil|insect|hybrid|mutant|fantasy|egg|ovipos|яйц|демон|демонич|рептил|инсектоид|насеком|гибрид|мутант|инопланет|кладк|яйцевод|клоак|инкубатор/i.test(description);
+  const looksPlainHuman =
+    /race:\s*(human|человек|human male|human female|ordinary human|обычный человек)|раса:\s*(человек|обычный человек|человеческая)/i.test(description) &&
+    !hasCompatiblePhysiology;
+
+  if (!hasOviposition || looksPlainHuman) {
+    console.warn(`[${extensionName}] Адаптация яйцекладки отклонена: модель не изменила физиологию {{char}}.`);
+    return false;
+  }
+  return true;
+}
+
 // Show the confirmation popup that warns the user about extra quota usage.
 // Returns a Promise<boolean> — true if the user confirmed, false otherwise.
 function showAdaptConfirmation(charName) {
@@ -2604,6 +2659,11 @@ async function adaptCharacterToStory(galleryEntry) {
     if (!parsed) {
       toastr.error(t('adapt.parse_failed'), t('common.another_universe'));
       console.error(`[${extensionName}] ❌ Could not parse adapt response. Raw:`, result.slice(0, 400));
+      return false;
+    }
+    if (!validateAdaptedCard(parsed, galleryEntry.encounterId === 'oviposition')) {
+      toastr.error('Модель не адаптировала физиологию {{char}} под яйцекладку. Запустите адаптацию ещё раз.', t('common.another_universe'));
+      console.error(`[${extensionName}] ❌ Oviposition adaptation failed validation. Raw:`, result.slice(0, 400));
       return false;
     }
 
