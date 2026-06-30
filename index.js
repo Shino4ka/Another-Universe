@@ -1,8 +1,18 @@
 // Другая Вселенная - расширение SillyTavern
 
-// Import from SillyTavern core
-import { eventSource, event_types, generateQuietArial, saveSettingsDebounced } from '../../../../script.js';
+// Импорт ядра SillyTavern.
+import * as STScript from '../../../../script.js';
 import { extension_settings, getContext } from '../../../extensions.js';
+
+const { eventSource, event_types, saveSettingsDebounced } = STScript;
+
+function runQuietGeneration(prompt, abortSignal) {
+  const generator = STScript.generateQuietPrompt || STScript.generateQuiet;
+  if (typeof generator !== 'function') {
+    throw new Error('В этой версии SillyTavern не найден тихий генератор промптов.');
+  }
+  return generator(prompt, false, false, '', '', abortSignal);
+}
 
 // Detect actual folder name from ES module URL (reliable for case-sensitive environments)
 const _scriptUrl = import.meta.url || '';
@@ -2583,7 +2593,7 @@ async function adaptCharacterToStory(galleryEntry) {
   const adaptAbortController = new AbortController();
 
   try {
-    const result = await generateQuietArial(prompt, false, false, '', '', adaptAbortController.signal);
+    const result = await runQuietGeneration(prompt, adaptAbortController.signal);
     if (!result) {
       toastr.error(t('adapt.failed'), t('common.another_universe'));
       console.error(`[${extensionName}] ❌ Empty result from adapt LLM call`);
@@ -4278,7 +4288,7 @@ async function onOpenUniverseClick() {
       checkInArial('mood', sanitizeCustomMood(extension_settings[extensionName].customMood || ''));
     }
     console.log(`[${extensionName}] 📝 Final prompt size: ${prompt.length} chars`);
-    const result = await generateQuietArial(prompt, false, false, '', '', generationAbortController.signal);
+    const result = await runQuietGeneration(prompt, generationAbortController.signal);
 
     if (result) {
       let badgeParts = [themeLabel];
@@ -4419,13 +4429,28 @@ async function initExtension() {
   console.log(`[${extensionName}] Loading...`);
 
   try {
-    const context = getContext();
-    // Use renderExtensionTemplateAsync for proper mobile/desktop compatibility
-    const settingsHtml = context.renderExtensionTemplateAsync
-      ? await context.renderExtensionTemplateAsync(`third-party/${extensionName}`, 'example')
-      : await $.get(`${extensionFolderPath}/example.html`);
+    const settingsContainer = $('#extensions_settings2').length ? $('#extensions_settings2') : $('#extensions_settings');
+    if (!settingsContainer.length) {
+      console.warn(`[${extensionName}] Панель настроек SillyTavern ещё не готова, повторим инициализацию позже.`);
+      return false;
+    }
+    if ($('#another_universe_enabled').length) {
+      console.log(`[${extensionName}] Панель настроек уже добавлена.`);
+      return true;
+    }
 
-    $('#extensions_settings2').append(settingsHtml);
+    const context = getContext();
+    let settingsHtml = '';
+    try {
+      settingsHtml = context.renderExtensionTemplateAsync
+        ? await context.renderExtensionTemplateAsync(`third-party/${extensionName}`, 'example')
+        : await $.get(`${extensionFolderPath}/example.html`);
+    } catch (templateError) {
+      console.warn(`[${extensionName}] Не удалось загрузить шаблон через renderExtensionTemplateAsync, пробуем прямой путь.`, templateError);
+      settingsHtml = await $.get(`${extensionFolderPath}/example.html`);
+    }
+
+    settingsContainer.append(settingsHtml);
 
     // Bind events
     $('#another_universe_enabled').on('input', onEnabledChange);
@@ -4453,8 +4478,10 @@ async function initExtension() {
     }
 
     console.log(`[${extensionName}] ✅ Loaded successfully`);
+    return true;
   } catch (error) {
     console.error(`[${extensionName}] ❌ Failed to load:`, error);
+    return false;
   }
 }
 
@@ -4463,14 +4490,14 @@ async function initExtension() {
 let _extensionInitialized = false;
 
 async function safeInitExtension() {
-  if (_extensionInitialized) return; // Prevent double-init
-  _extensionInitialized = true;
-  await initExtension();
+  if (_extensionInitialized) return;
+  const ok = await initExtension();
+  if (ok) _extensionInitialized = true;
 }
 
 jQuery(() => {
   // Layer 1: If container already exists (Desktop fast-load), init immediately
-  if ($('#extensions_settings2').length) {
+  if ($('#extensions_settings2').length || $('#extensions_settings').length) {
     safeInitExtension();
     return;
   }
@@ -4484,4 +4511,5 @@ jQuery(() => {
 
   // Layer 3: Timeout fallback for old ST versions where APP_READY may not fire
   setTimeout(() => safeInitExtension(), 2000);
+  setTimeout(() => safeInitExtension(), 5000);
 });
