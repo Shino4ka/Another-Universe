@@ -1,0 +1,12 @@
+{
+  "display_name": "Другая Вселенная",
+  "loading_order": 100,
+  "requires": [],
+  "optional": [],
+  "js": "index.js",
+  "css": "style.css",
+  "author": "POPUKO (majesty.pop), русская версия",
+  "version": "1.2.0-ru.1",
+  "homePage": "https://github.com/mangkoodkung/Another-Universe",
+  "auto_update": true
+}
